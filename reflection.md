@@ -67,6 +67,12 @@ Issues I noted but did not change yet:
 - Describe one tradeoff your scheduler makes.
 - Why is that tradeoff reasonable for this scenario?
 
+**Tradeoff: conflicts are warnings, and only preferred times are checked.** When two timed tasks overlap, the scheduler does not refuse the task or try to rearrange the day. `find_conflicts()` returns a warning message and the plan keeps both tasks, pushing the later one back until it no longer overlaps. The check compares the preferred time windows (start time plus duration), so overlaps count and not only exact matches. It runs before pushback, so a task that gets moved because an earlier one moved is explained by its "moved from" reason, not by a separate conflict warning.
+
+Why this is reasonable: a pet owner usually cares more about getting a complete, usable plan than about a perfect one. A warning tells them about the clash and lets them decide (for example, feed the cat first, then walk the dog), while a rejected task would silently drop care that still needs to happen. Pushing back is also simple and predictable. The cost is that the plan can drift later in the day than the owner asked for, and the scheduler never tries a smarter arrangement, such as moving an untimed task out of the way of a timed one.
+
+Algorithm review: I compared my `find_conflicts()` against two shorter versions on the tricky cases. Checking only adjacent tasks with `itertools.pairwise` is the shortest, but it missed conflicts when one long task contains several short ones (it reported 1 warning where 2 were expected in one test case, and 1 where 3 were expected in another). Checking every pair with `itertools.combinations` found the same conflicts as mine and is arguably the easiest to read, but it is O(n²) instead of O(n log n). I kept my version: sort once, then compare each task with the latest-ending earlier task. It is a few lines longer, but it is correct on every case I tested, it stays fast as the task list grows, and the loop is still easy to follow.
+
 ---
 
 ## 3. AI Collaboration

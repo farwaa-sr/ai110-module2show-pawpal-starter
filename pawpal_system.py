@@ -4,12 +4,14 @@ Based on uml_diagram.md. The Scheduler reads every task through
 Owner.get_all_tasks(), so plans cover all of an owner's pets at once.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import date, timedelta
 from typing import Optional
 
 # Lower number = scheduled first. Lets the Scheduler sort priorities without string checks.
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 FREQUENCIES = ("once", "daily", "weekly")
+RECURRENCE_DAYS = {"daily": 1, "weekly": 7}
 DAY_START_MINUTE = 8 * 60  # plans begin at 08:00
 
 
@@ -42,6 +44,7 @@ class Task:
     frequency: str = "once"  # "once" | "daily" | "weekly"
     completed: bool = False
     pet_name: str = ""  # set by Pet.add_task so a flattened task list keeps its pet
+    due_date: date = field(default_factory=date.today)  # the day this task needs doing
 
     def __post_init__(self) -> None:
         """Validate the fields as soon as the task is created."""
@@ -88,6 +91,13 @@ class Task:
         """Mark this task as done."""
         self.completed = True
 
+    def next_occurrence(self, today: Optional[date] = None) -> Optional["Task"]:
+        """Return a fresh copy due today + 1 day (daily) or + 7 days (weekly); None if it doesn't repeat."""
+        days = RECURRENCE_DAYS.get(self.frequency)
+        if days is None:
+            return None
+        return replace(self, completed=False, due_date=(today or date.today()) + timedelta(days=days))
+
 
 @dataclass
 class Pet:
@@ -111,6 +121,16 @@ class Pet:
         """Return a copy of this pet's tasks."""
         return list(self.tasks)
 
+    def complete_task(self, task: Task, today: Optional[date] = None) -> Optional[Task]:
+        """Mark a task done and, if it repeats, add and return the next occurrence."""
+        if task not in self.tasks:
+            raise ValueError("this pet doesn't have that task")
+        task.mark_complete()
+        upcoming = task.next_occurrence(today)
+        if upcoming is not None:
+            self.add_task(upcoming)
+        return upcoming
+
 
 @dataclass
 class Owner:
@@ -128,6 +148,17 @@ class Owner:
     def get_all_tasks(self) -> list[Task]:
         """Return every task from every one of this owner's pets, together."""
         return [task for pet in self.pets for task in pet.get_tasks()]
+
+    def filter_tasks(
+        self, pet_name: Optional[str] = None, completed: Optional[bool] = None
+    ) -> list[Task]:
+        """Return tasks matching a pet name (case-insensitive) and/or completion status."""
+        return [
+            t
+            for t in self.get_all_tasks()
+            if (pet_name is None or t.pet_name.lower() == pet_name.lower())
+            and (completed is None or t.completed == completed)
+        ]
 
     def set_availability(self, minutes: int) -> None:
         """Set how many minutes per day the owner has for pet care."""
@@ -158,20 +189,56 @@ class Scheduler:
         self.owner = owner
         self.plan: list[ScheduledTask] = []
         self.skipped: list[tuple[Task, str]] = []  # (task, why it did not fit)
+        self.conflicts: list[str] = []  # warnings about overlapping preferred times
 
-    def generate_plan(self) -> list[ScheduledTask]:
-        """Rebuild the plan from scratch.
+    @staticmethod
+    def sort_by_time(tasks: list[Task]) -> list[Task]:
+        """Return tasks in clock order by preferred time; untimed tasks go last, by priority."""
+        return sorted(tasks, key=Scheduler._time_key)
 
-        Pulls tasks from Owner.get_all_tasks() (all pets), skips completed ones,
-        and takes the rest by priority (then earlier preferred time, then shorter
-        duration) while they fit in the owner's available minutes. Chosen tasks
-        are laid out in time order, starting at 08:00 or their preferred time.
+    @staticmethod
+    def find_conflicts(tasks: list[Task]) -> list[str]:
+        """Warn about timed tasks whose preferred windows overlap.
+
+        Sorts by start time, then checks each task against the latest-ending task
+        before it, so one pass is enough. Overlaps count even across different
+        pets, since the owner can't be in two places at once.
         """
+        timed = [t for t in Scheduler.sort_by_time(tasks) if t.time is not None]
+        warnings: list[str] = []
+        latest: Optional[Task] = None
+        latest_end = 0
+        for task in timed:
+            start = parse_time(task.time)
+            if latest is not None and start < latest_end:
+                same = "same pet" if task.pet_name == latest.pet_name else "different pets"
+                warnings.append(
+                    f"Conflict ({same}): '{task.title}' ({task.pet_name}) at {task.time} "
+                    f"overlaps '{latest.title}' ({latest.pet_name}) "
+                    f"{latest.time}-{format_time(latest_end)}"
+                )
+            end = start + task.duration_minutes
+            if latest is None or end > latest_end:
+                latest, latest_end = task, end
+        return warnings
+
+    def generate_plan(self, day: Optional[date] = None) -> list[ScheduledTask]:
+        """Rebuild the plan for one day (default today) from all pets' tasks.
+
+        Skips completed tasks and ones not yet due, then takes the rest by priority
+        (then earlier preferred time, then shorter duration) while they fit in the
+        owner's available minutes. Chosen tasks are laid out in time order, starting
+        at 08:00 or their preferred time; overlapping preferred times are recorded
+        in self.conflicts and the later task is pushed back.
+        """
+        day = day or date.today()
         self.plan = []
         self.skipped = []
         budget = self.owner.available_minutes_per_day
 
-        pending = [t for t in self.owner.get_all_tasks() if not t.completed]
+        pending = [
+            t for t in self.owner.get_all_tasks() if not t.completed and t.due_date <= day
+        ]
         pending.sort(key=self._priority_key)
 
         chosen: list[tuple[Task, str]] = []
@@ -185,6 +252,8 @@ class Scheduler:
                 self.skipped.append(
                     (task, f"needs {task.duration_minutes} min but only {left} min left")
                 )
+
+        self.conflicts = self.find_conflicts([task for task, _ in chosen])
 
         # Lay out chosen tasks in time order; tasks with a preferred time come at that time.
         chosen.sort(key=lambda item: self._time_key(item[0]))
@@ -215,6 +284,9 @@ class Scheduler:
                 f"{task.title}{who} [{task.duration_minutes} min, {task.priority}] "
                 f"- {item.reason}"
             )
+        if self.conflicts:
+            lines.append("Conflicts:")
+            lines.extend(f"  {warning}" for warning in self.conflicts)
         if self.skipped:
             lines.append("Not scheduled:")
             for task, why in self.skipped:
