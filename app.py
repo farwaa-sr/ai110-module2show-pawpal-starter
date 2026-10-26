@@ -12,6 +12,26 @@ if "owner" not in st.session_state:
     st.session_state.owner = Owner(name="Jordan")
 owner: Owner = st.session_state.owner
 
+
+def show_conflicts(conflicts: list[str], in_plan: bool = False) -> None:
+    """Show scheduling conflicts as one warning box that names the tasks and says how to fix them."""
+    if not conflicts:
+        return
+    count = len(conflicts)
+    # "Conflict (same pet): 'A' ..." -> "'A' ... *(same pet)*"
+    parts = [c.removeprefix("Conflict (").split("): ", 1) for c in conflicts]
+    lines = "\n".join(f"- {detail} *({kind})*" for kind, detail in parts)
+    outcome = (
+        "In the plan below, the later task was moved back so nothing overlaps."
+        if in_plan
+        else "Generating a schedule will move the later task back so nothing overlaps."
+    )
+    st.warning(
+        f"**⚠️ {count} scheduling conflict{'s' if count > 1 else ''}**\n\n{lines}\n\n"
+        f"{outcome} To resolve it, change one task's preferred time or give it a different "
+        "priority."
+    )
+
 st.title("🐾 PawPal+")
 st.markdown(
     "A pet care planner: add your pets and their care tasks, then generate a "
@@ -169,6 +189,12 @@ if all_tasks:
 else:
     st.info("No tasks yet.")
 
+# Live check (Scheduler.find_conflicts) so clashes show up as soon as tasks are added.
+due_now = [t for t in owner.filter_tasks(completed=False) if t.due_date <= datetime.date.today()]
+conflict_slot = st.empty()  # replaced by the in-plan version when a schedule is generated
+with conflict_slot.container():
+    show_conflicts(Scheduler.find_conflicts(due_now))
+
 st.divider()
 
 # --- Generate schedule -> Scheduler(owner).generate_plan() --------------------
@@ -179,8 +205,14 @@ if st.button("Generate schedule"):
     else:
         scheduler = Scheduler(owner)
         plan = scheduler.generate_plan()
+        conflict_slot.empty()  # avoid showing the same warning twice
         if plan:
-            st.success(f"Today's plan for {owner.name} ({owner.available_minutes_per_day} min available)")
+            planned_minutes = sum(i.task.duration_minutes for i in plan)
+            st.success(f"Today's plan for {owner.name} is ready!")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Tasks scheduled", len(plan))
+            m2.metric("Minutes planned", f"{planned_minutes} / {owner.available_minutes_per_day}")
+            m3.metric("Not scheduled", len(scheduler.skipped))
             st.table(
                 [
                     {
@@ -195,9 +227,10 @@ if st.button("Generate schedule"):
             )
         else:
             st.warning("Nothing fits in the time available.")
-        for warning in scheduler.conflicts:
-            st.warning(warning + ". The later task was pushed back in the plan.")
+        show_conflicts(scheduler.conflicts, in_plan=True)
         if scheduler.skipped:
-            st.markdown("**Not scheduled**")
-            for task, why in scheduler.skipped:
-                st.write(f"- {task.title} ({task.pet_name}): {why}")
+            st.info(
+                "**Not scheduled today**\n\n"
+                + "\n".join(f"- {t.title} ({t.pet_name}): {why}" for t, why in scheduler.skipped)
+                + "\n\nIncrease your available minutes, or lower a task's duration, to fit more in."
+            )

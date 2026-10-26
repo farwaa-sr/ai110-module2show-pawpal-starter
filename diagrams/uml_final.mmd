@@ -1,0 +1,65 @@
+classDiagram
+    class Owner {
+        +str name
+        +int available_minutes_per_day
+        +dict preferences
+        +list~Pet~ pets
+        +add_pet(pet) void
+        +get_all_tasks() list~Task~
+        +filter_tasks(pet_name, completed) list~Task~
+        +set_availability(minutes) void
+    }
+
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +list~Task~ tasks
+        +add_task(task) void
+        +remove_task(task) void
+        +get_tasks() list~Task~
+        +complete_task(task, today) Task
+    }
+
+    class Task {
+        +str title
+        +int duration_minutes
+        +str priority
+        +str category
+        +str time
+        +str frequency
+        +bool completed
+        +str pet_name
+        +date due_date
+        +edit(title, duration_minutes, priority, time, frequency) void
+        +mark_complete() void
+        +next_occurrence(today) Task
+        -_validate() void
+    }
+
+    class ScheduledTask {
+        +Task task
+        +int start_minute
+        +str reason
+        +end_minute int
+    }
+
+    class Scheduler {
+        +Owner owner
+        +list~ScheduledTask~ plan
+        +list skipped
+        +list~str~ conflicts
+        +sort_by_time(tasks)$ list~Task~
+        +find_conflicts(tasks)$ list~str~
+        +generate_plan(day) list~ScheduledTask~
+        +explain_plan() str
+    }
+
+    Owner "1" --> "1..*" Pet : has
+    Pet "1" --> "0..*" Task : has
+    Scheduler "1" --> "1" Owner : reads all tasks via get_all_tasks()
+    Scheduler "1" --> "0..*" ScheduledTask : produces plan
+    ScheduledTask "1" --> "1" Task : places
+    Scheduler ..> Task : sorts, checks conflicts, records skipped
+    Pet ..> Task : complete_task() adds the next occurrence
+    Task ..> Task : next_occurrence() makes a copy for the next due date

@@ -33,7 +33,7 @@ Building blocks (initial brainstorm):
 
 **Relationships:** an Owner has one or more Pets, a Pet has many Tasks, and the Scheduler reads the Owner's tasks and time limit to produce the plan.
 
-The full Mermaid class diagram is in [uml_diagram.md](uml_diagram.md).
+The full Mermaid class diagram is in [uml_diagram.md](uml_diagram.md). It was first drawn from this brainstorm and then updated to match the final code; the final source is [diagrams/uml_final.mmd](diagrams/uml_final.mmd).
 
 **b. Design changes**
 
@@ -47,11 +47,21 @@ After writing the class skeleton in `pawpal_system.py`, I asked my AI coding ass
 3. **Added `Scheduler.skipped`** (tasks that didn't fit, with the reason). `explain_plan()` has to explain what was left out, and nothing in the original design recorded that.
 4. **Added `PRIORITY_ORDER`.** Priority is a string, and sorting `"high"`/`"medium"`/`"low"` alphabetically gives the wrong order. A mapping gives the scheduler a reliable sort key.
 
-Issues I noted but did not change yet:
-- `generate_plan()` must rebuild the plan from scratch each time and skip completed tasks, or the stored plan goes stale when tasks change.
-- A greedy "highest priority first" fit can let one long task block several short ones. That is a tradeoff to decide when implementing the scheduler.
-- There is no recurrence (daily or weekly tasks) yet, which the README's "Smarter Scheduling" section mentions.
-- `Owner.available_minutes_per_day` and `set_availability()` overlap, and nothing validates the value (for example, negative minutes).
+Issues I noted at that point, and what happened to each:
+- `generate_plan()` must rebuild the plan from scratch each time and skip completed tasks, or the stored plan goes stale when tasks change. **Done:** it resets the plan on every call and skips completed tasks.
+- A greedy "highest priority first" fit can let one long task block several short ones. **Still open:** it is the tradeoff described in section 2b.
+- There was no recurrence (daily or weekly tasks) yet. **Done:** see change 6 below.
+- `Owner.available_minutes_per_day` and `set_availability()` overlap, and nothing validated the value. **Partly done:** `set_availability()` now rejects negative minutes, but the field can still be set directly, so the overlap remains.
+
+Later changes, made while adding sorting, filtering, recurring tasks, and conflict detection (the final diagram is in [diagrams/uml_final.mmd](diagrams/uml_final.mmd)):
+
+5. **Added `Task.time`, `Task.frequency`, and `Task.due_date`, plus validation.** Sorting needs a time, recurrence needs a frequency, and planning by day needs a due date. Validation (`_validate()`) was added so bad values are rejected when a task is created or edited, and `edit()` grew to cover the new fields.
+6. **Added `Task.next_occurrence()` and `Pet.complete_task()`.** Completing a daily or weekly task now creates the next one. I put the "complete and spawn" step on `Pet`, not `Task`, because the new task has to be added to the pet's own task list, and a task does not know its pet's list. This also added two new relationships to the diagram: `Pet` and `Task` both create new `Task` objects.
+7. **Added `Owner.filter_tasks()`.** Filtering by pet and status works over `get_all_tasks()`, so it covers every pet and belongs with the class that owns the pets.
+8. **Added `Scheduler.sort_by_time()` and `Scheduler.find_conflicts()` as static methods, plus `Scheduler.conflicts`.** They take a list of tasks and do not need a scheduler's state, so they work on any list, which also made them easy to test. `conflicts` stores the warnings from the latest plan. `generate_plan()` also gained an optional `day`, so it only plans tasks that are due.
+9. **Added `ScheduledTask.end_minute`.** The plan and the conflict messages both need the end time of an entry.
+
+Two of these came from testing, not from planning: the tests found that an already-completed repeating task could create a duplicate next occurrence (so `complete_task()` now does nothing the second time), and that a time like `"8:60"` was accepted (so `parse_time()` now checks hours and minutes separately).
 
 ---
 
@@ -61,6 +71,16 @@ Issues I noted but did not change yet:
 
 - What constraints does your scheduler consider (for example: time, priority, preferences)?
 - How did you decide which constraints mattered most?
+
+The scheduler considers four things:
+1. **The owner's available minutes per day.** This is a hard limit: the plan never schedules more than the owner has time for.
+2. **Priority** (high, medium, low). It decides which tasks get the limited time first, and therefore which ones are skipped.
+3. **Preferred times.** A task can have a start time. This is a soft constraint: if two tasks overlap, the later one is moved back and the owner gets a warning.
+4. **Completion and due date.** Completed tasks and tasks not yet due are left out of the day's plan.
+
+I ranked them by how bad it is to get them wrong. Going over the owner's time makes the plan useless, so the time budget comes first. Priority comes next because it is the fairest way to decide what to drop when time runs out: a medication should not be skipped for grooming. Preferred times came last because they can be bent (moving a task by a few minutes costs little), while the first two cannot.
+
+One thing I did not use: `Owner.preferences` exists as a field, but no scheduler logic reads it yet.
 
 **b. Tradeoffs**
 
@@ -96,6 +116,19 @@ What the AI suggested, and what I did with it:
 
 How I verified the result: I ran `main.py` rather than trusting the code. That run exposed a real bug in the AI's scheduler: the 07:30 morning walk was moved to 08:00 with the reason "an earlier task ran over", although nothing ran earlier. The day-start time was being applied to every task. It was fixed so that 08:00 only applies to tasks with no preferred time, and the rerun showed the walk at 07:30. I also added pytest tests for marking a task complete and for adding a task to a pet.
 
+**c. AI strategy**
+
+*Which features were most effective?* Three things worked best:
+- **Working directly in the project.** The assistant could read my files, edit several files at once, and run the code. Running `main.py` is what exposed the 07:30 walk bug, and running the tests found the two bugs described in section 4. Code that is only suggested in a chat window never gets that check.
+- **Asking for a review of code that already existed**, for example the skeleton review in 1b. It gave more useful feedback than asking for code from nothing.
+- **Tests as a way to check the AI's work.** I did not have to read every line it wrote; I could ask whether the behavior was right and let the tests answer.
+
+*An AI suggestion I modified.* The assignment said a repeating task's next due date should be "today + 1 day". The first version the assistant wrote counted from the task's old due date instead, which looks equivalent but is not: a daily walk finished 3 days late would get a next date that was still in the past. I had it change the calculation to count from today and added a test for the late case. In the same spirit, when it offered shorter ways to write conflict detection, I had it compare them on tricky cases first, and I kept the longer version because the shorter `pairwise` one missed conflicts (see 2b).
+
+*Separate chat sessions.* I did not actually use separate chat sessions. I worked through every phase in one continuous session and kept organized with the assignment's steps, the commits after each phase, and the README and reflection files as running notes. A fresh session for testing might have helped: the assistant that wrote the scheduler also wrote its tests and reviewed its skeleton, so it may share its own blind spots. The tests still caught real bugs, but I would try a separate session for the testing phase next time.
+
+*What I learned about being the lead architect.* The assistant is fast, but it works on what it is told, so the decisions that shape the system have to come from me. Examples from this project: I chose warn-only conflicts and spawning a new task for recurrence, I asked "will it mess with my files?" before a venv rebuild that would have deleted my projects folder, and I rejected putting the virtual environment inside the repo. Designing the classes and their responsibilities first (the UML) gave the AI a clear structure to build inside, so its code fit together instead of drifting. And the habit that mattered most was verifying: running the code and the tests, not trusting a confident answer.
+
 ---
 
 ## 4. Testing and Verification
@@ -105,10 +138,18 @@ How I verified the result: I ran `main.py` rather than trusting the code. That r
 - What behaviors did you test?
 - Why were these tests important?
 
+I wrote 56 tests covering sorting (clock order, untimed tasks last, ties broken by priority), filtering by pet and status, recurring tasks (the next daily or weekly task, month and year boundaries, completing late, completing twice), conflict detection (overlaps, exact same time, same pet and different pets, back-to-back tasks, one long task containing others), plan building (the time budget, priority order, exact fit, zero minutes, completed and not-yet-due tasks), and input validation. I also tested the empty cases: a pet with no tasks and an owner with no pets.
+
+These mattered because the scheduler's output looks plausible even when it is wrong, so I could not trust it by eye. The edge-case tests found two real bugs I had not noticed: the time `"8:60"` was accepted as valid, and completing an already-completed repeating task created a duplicate next task.
+
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
 - What edge cases would you test next if you had more time?
+
+I am fairly confident, about 4 out of 5. The scheduling logic is well covered and all 56 tests pass. I am less sure about the parts the tests do not reach: the Streamlit app is only checked by hand, and the greedy fit does not guarantee the best use of the available time.
+
+With more time I would test: a task that runs past midnight (the scheduler does not define what should happen), two pets with the same name (the app blocks it, but `Owner.add_pet` does not), overdue tasks that were never completed piling up in each day's plan, and the UI through Streamlit's test runner.
 
 ---
 
@@ -118,10 +159,16 @@ How I verified the result: I ran `main.py` rather than trusting the code. That r
 
 - What part of this project are you most satisfied with?
 
+The plan explains itself. Every scheduled task has a reason, every skipped task says why it did not fit, and conflicts are flagged with a suggestion for fixing them. I am also glad the tests caught real bugs and that the `Scheduler` reads every pet's tasks through one `Owner` method, which kept the multi-pet behavior simple.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+I would make the scheduler smarter about fitting tasks (the greedy fit can waste time) and let it move flexible tasks out of the way instead of only pushing the later task back. I would also add more flexible repeats (specific weekdays), handle overdue tasks, use the owner's `preferences`, save data between sessions (it is lost when the app restarts), and add tests for the Streamlit UI.
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+Design first, then verify. A clear picture of each class's job (the UML) let the AI build quickly without the pieces drifting apart, and running the code and tests caught mistakes that sounded right when described. With a powerful AI tool the human's job shifts toward making the decisions and checking the results.
