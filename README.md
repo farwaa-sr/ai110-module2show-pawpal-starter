@@ -22,6 +22,19 @@ Your final app should:
 - Display the plan clearly (and ideally explain the reasoning)
 - Include tests for the most important scheduling behaviors
 
+## Implementation summary
+
+The logic layer lives in `pawpal_system.py` and is built from four classes (plus a small `ScheduledTask` record). See `uml_diagram.md` for the class diagram.
+
+- **Task**: one care activity with a title, duration, priority (high/medium/low), optional preferred time (`"HH:MM"`), frequency (once/daily/weekly), and completion status. It validates its own fields.
+- **Pet**: a name, species, age, and a list of tasks. Adding a task tags it with the pet's name.
+- **Owner**: holds the daily minutes available and a list of pets. `get_all_tasks()` returns every pet's tasks together.
+- **Scheduler**: the "brain". `generate_plan()` reads tasks only through `Owner.get_all_tasks()`, so one plan covers all pets. It skips completed tasks, takes the rest by priority while they fit in the owner's available minutes, and lays them out in time order (untimed tasks start at 08:00). Each plan entry is a `ScheduledTask` with a start time and a reason, tasks that didn't fit go in `skipped`, and `explain_plan()` turns both into readable text.
+
+Known limits: `frequency` is stored but does not yet change the plan, the fit is greedy by priority (a long task can crowd out shorter ones), and overlapping preferred times are resolved by pushing the later task back rather than flagging a conflict.
+
+Run the demo with `python main.py` and the tests with `python -m pytest`.
+
 ## Getting started
 
 ### Setup
@@ -44,14 +57,27 @@ pip install -r requirements.txt
 
 ## 🖥️ Sample Output
 
-Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
+Output from running `python main.py` (owner Farwa with 90 minutes available, two pets, five tasks):
 
 ```
-# e.g.:
-# Daily plan for Biscuit (Golden Retriever):
-#   08:00 — Morning walk (30 min) [priority: high]
-#   09:00 — Feeding (10 min) [priority: high]
-#   ...
+==================================================
+Today's Schedule
+==================================================
+07:30-08:00  Morning walk (Biscuit) [30 min, high]
+08:00-08:10  Breakfast (Mochi) [10 min, high]
+12:30-12:50  Play session (Mochi) [20 min, medium]
+18:00-18:30  Evening walk (Biscuit) [30 min, medium]
+
+Not scheduled:
+  Grooming (Biscuit) - needs 45 min but only 0 min left
+
+Daily plan for Farwa (90 min available):
+  07:30-08:00 Morning walk (Biscuit) [30 min, high] - high priority; fits in the time available
+  08:00-08:10 Breakfast (Mochi) [10 min, high] - high priority; fits in the time available
+  12:30-12:50 Play session (Mochi) [20 min, medium] - medium priority; fits in the time available
+  18:00-18:30 Evening walk (Biscuit) [30 min, medium] - medium priority; fits in the time available
+Not scheduled:
+  Grooming (Biscuit) [low] - needs 45 min but only 0 min left
 ```
 
 ## 🧪 Testing PawPal+

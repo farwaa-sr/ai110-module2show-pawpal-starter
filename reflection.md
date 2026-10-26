@@ -76,10 +76,19 @@ Issues I noted but did not change yet:
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
 
+I used an AI coding assistant (Claude Code) across the whole project: brainstorming the four classes and their attributes and methods, drafting the Mermaid UML diagram, writing the class skeleton, reviewing that skeleton for gaps, implementing the logic, writing the demo script and tests, and adding docstrings. The most helpful prompts were specific and tied to a step of the assignment, for example "create a Mermaid class diagram based on the attributes and methods we brainstormed" or "review my skeleton for missing relationships and logic bottlenecks". Asking for a review of existing code gave more useful feedback than asking for code from scratch.
+
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
+
+What the AI suggested, and what I did with it:
+- **Accepted (design review):** adding `Task.pet_name`, a `ScheduledTask` class, `Scheduler.skipped`, and a `PRIORITY_ORDER` mapping. Each fixed a real gap: tasks lost their pet when flattened, the plan had no times, skipped tasks weren't recorded, and string priorities sort wrongly.
+- **Noted but not built:** recurring-task behavior, a smarter fit than greedy priority order, and validation of the owner's availability. I recorded them in section 1b as known limits instead of expanding the scope.
+- **Rejected (setup):** the AI's first plan for the broken virtual environment was to delete and rebuild it. I asked whether it would affect my files, and it turned out my Projects folder was inside that environment's folder, so the plan would have deleted my work. We created a separate environment instead.
+
+How I verified the result: I ran `main.py` rather than trusting the code. That run exposed a real bug in the AI's scheduler: the 07:30 morning walk was moved to 08:00 with the reason "an earlier task ran over", although nothing ran earlier. The day-start time was being applied to every task. It was fixed so that 08:00 only applies to tasks with no preferred time, and the rerun showed the walk at 07:30. I also added pytest tests for marking a task complete and for adding a task to a pet.
 
 ---
 
