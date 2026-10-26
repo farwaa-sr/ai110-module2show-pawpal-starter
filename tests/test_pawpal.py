@@ -157,6 +157,18 @@ def test_overlapping_tasks_are_reported_as_conflicts():
     assert "Feed" in scheduler.conflicts[0] and "Walk" in scheduler.conflicts[0]
 
 
+def test_scheduler_flags_two_tasks_at_the_exact_same_time():
+    owner, biscuit, mochi = make_owner()
+    biscuit.add_task(Task("Walk", 30, time="09:00", due_date=TODAY))
+    mochi.add_task(Task("Feed", 10, time="09:00", due_date=TODAY))
+    scheduler = Scheduler(owner)
+
+    scheduler.generate_plan(TODAY)
+
+    assert len(scheduler.conflicts) == 1
+    assert "09:00" in scheduler.conflicts[0]
+
+
 def test_same_pet_conflict_is_labelled():
     owner, biscuit, _ = make_owner()
     biscuit.add_task(Task("Walk", 30, time="08:00", due_date=TODAY))

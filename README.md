@@ -109,25 +109,47 @@ Pending tasks now:
 
 ## 🧪 Testing PawPal+
 
-```bash
-# Run the full test suite:
-pytest
+Run the full test suite from the project folder (with the virtual environment active):
 
-# Run with coverage:
-pytest --cov
+```bash
+python -m pytest
 ```
 
-Sample test output:
+### What the tests cover
+
+56 tests in `tests/test_pawpal.py` and `tests/test_edge_cases.py`:
+
+- **Sorting:** tasks come back in clock order with untimed tasks last, ties at the same time are broken by priority, and the original list is not modified.
+- **Filtering:** by pet (case-insensitive), by completion status, and both together; an unknown pet returns nothing.
+- **Recurring tasks:** completing a daily or weekly task creates the next one due today + 1 or + 7 days, including across month and year boundaries and when completed late; one-off tasks create nothing; completing a task twice does not create a duplicate.
+- **Conflict detection:** overlaps and exact same-time starts are flagged for the same pet and for different pets; back-to-back tasks are not conflicts; one long task containing several others is caught.
+- **Plan building:** priority order under a tight time budget, an exact fit, zero minutes available, a task longer than the whole budget, completed and not-yet-due tasks left out, no duplicates when the plan is generated twice, and correct start times for timed and untimed tasks.
+- **Edge cases and validation:** a pet with no tasks, an owner with no pets, and invalid durations, priorities, frequencies and times (such as `"8:60"` and `"25:00"`) are rejected, and a failed `edit()` leaves the task unchanged.
+
+The edge-case tests found two real bugs, both fixed: `"8:60"` was accepted as a valid time, and completing an already-completed recurring task created a duplicate.
+
+### Test output
 
 ```
 ============================= test session starts =============================
 platform win32 -- Python 3.14.5, pytest-9.1.1, pluggy-1.7.0
-collected 20 items
+rootdir: C:\Users\farwa\.vscode\.venv\Projects\ai110-module2show-pawpal-starter
+plugins: anyio-4.15.1
+collected 56 items
 
-tests\test_pawpal.py ....................                                [100%]
+tests\test_edge_cases.py ...................................             [ 62%]
+tests\test_pawpal.py .....................                               [100%]
 
-============================= 20 passed in 0.09s ==============================
+============================= 56 passed in 0.15s ==============================
 ```
+
+### Confidence level: ⭐⭐⭐⭐ (4 out of 5)
+
+I'm confident in the scheduling logic (sorting, filtering, recurrence, conflict detection, and plan building), because each has both happy-path and edge-case tests and the tests already caught two real bugs. I stopped at four stars because:
+
+- the Streamlit UI (`app.py`) is not covered by the test suite; I only checked it by hand with Streamlit's test runner;
+- a task that runs past midnight is not handled or tested;
+- the scheduler is greedy by priority, so it is not guaranteed to fit the most care into the available time.
 
 ## 📐 Smarter Scheduling
 

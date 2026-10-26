@@ -18,13 +18,12 @@ DAY_START_MINUTE = 8 * 60  # plans begin at 08:00
 def parse_time(text: str) -> int:
     """Convert "HH:MM" to minutes after midnight."""
     try:
-        hours, minutes = text.split(":")
-        value = int(hours) * 60 + int(minutes)
+        hours, minutes = (int(part) for part in text.split(":"))
     except ValueError:
         raise ValueError(f"Time must look like 'HH:MM', got {text!r}") from None
-    if not 0 <= value < 24 * 60:
+    if not (0 <= hours < 24 and 0 <= minutes < 60):
         raise ValueError(f"Time out of range: {text!r}")
-    return value
+    return hours * 60 + minutes
 
 
 def format_time(minute: int) -> str:
@@ -122,9 +121,15 @@ class Pet:
         return list(self.tasks)
 
     def complete_task(self, task: Task, today: Optional[date] = None) -> Optional[Task]:
-        """Mark a task done and, if it repeats, add and return the next occurrence."""
+        """Mark a task done and, if it repeats, add and return the next occurrence.
+
+        Completing a task that is already done does nothing and returns None, so a
+        double click can't create a duplicate next occurrence.
+        """
         if task not in self.tasks:
             raise ValueError("this pet doesn't have that task")
+        if task.completed:
+            return None
         task.mark_complete()
         upcoming = task.next_occurrence(today)
         if upcoming is not None:
