@@ -40,6 +40,19 @@ The full Mermaid class diagram is in [uml_diagram.md](uml_diagram.md).
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
+After writing the class skeleton in `pawpal_system.py`, I asked my AI coding assistant to review it for missing relationships and logic bottlenecks. I made these changes based on its feedback:
+
+1. **Added `Task.pet_name`.** `Owner.get_all_tasks()` flattens every pet's tasks into one list, so a task would no longer know which pet it was for. The plan needs that to say things like "Walk for Biscuit".
+2. **Added a `ScheduledTask` class** (task, start time, reason) and changed `Scheduler.plan` to hold these instead of bare `Task`s. A plain list of tasks has no times, but the daily plan needs them. Putting the reason on each entry also replaced the separate `explanations` dict, which would have had to be kept in sync with the plan.
+3. **Added `Scheduler.skipped`** (tasks that didn't fit, with the reason). `explain_plan()` has to explain what was left out, and nothing in the original design recorded that.
+4. **Added `PRIORITY_ORDER`.** Priority is a string, and sorting `"high"`/`"medium"`/`"low"` alphabetically gives the wrong order. A mapping gives the scheduler a reliable sort key.
+
+Issues I noted but did not change yet:
+- `generate_plan()` must rebuild the plan from scratch each time and skip completed tasks, or the stored plan goes stale when tasks change.
+- A greedy "highest priority first" fit can let one long task block several short ones. That is a tradeoff to decide when implementing the scheduler.
+- There is no recurrence (daily or weekly tasks) yet, which the README's "Smarter Scheduling" section mentions.
+- `Owner.available_minutes_per_day` and `set_availability()` overlap, and nothing validates the value (for example, negative minutes).
+
 ---
 
 ## 2. Scheduling Logic and Tradeoffs

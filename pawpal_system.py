@@ -7,6 +7,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
+# Lower number = scheduled first. Lets the Scheduler sort priorities without string checks.
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
 @dataclass
 class Task:
     """A single care activity (walk, feeding, meds, enrichment, grooming)."""
@@ -16,6 +20,7 @@ class Task:
     priority: str = "medium"  # "high" | "medium" | "low"
     category: str = "general"
     completed: bool = False
+    pet_name: str = ""  # set by Pet.add_task so a flattened task list keeps its pet
 
     def edit(
         self,
@@ -75,16 +80,26 @@ class Owner:
         pass
 
 
+@dataclass
+class ScheduledTask:
+    """One entry in the daily plan: a task placed at a start time, with the reason why."""
+
+    task: Task
+    start_minute: int  # minutes after the start of the day, e.g. 480 = 08:00
+    reason: str = ""
+
+
 class Scheduler:
     """Turns an owner's tasks and time limit into a daily plan with explanations."""
 
     def __init__(self, owner: Owner) -> None:
         self.owner = owner
-        self.plan: list[Task] = []
-        self.explanations: dict = {}
+        self.plan: list[ScheduledTask] = []
+        self.skipped: list[tuple[Task, str]] = []  # (task, why it did not fit)
 
-    def generate_plan(self) -> list[Task]:
-        """Build the daily plan: order tasks by priority and fit them in the available time."""
+    def generate_plan(self) -> list[ScheduledTask]:
+        """Rebuild the plan from scratch: skip completed tasks, order the rest by
+        priority, and fit them into the owner's available time."""
         pass
 
     def explain_plan(self) -> str:

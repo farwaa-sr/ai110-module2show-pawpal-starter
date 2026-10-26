@@ -28,20 +28,28 @@ classDiagram
         +str priority
         +str category
         +bool completed
+        +str pet_name
         +edit(title: str, duration_minutes: int, priority: str) void
         +mark_complete() void
     }
 
+    class ScheduledTask {
+        +Task task
+        +int start_minute
+        +str reason
+    }
+
     class Scheduler {
         +Owner owner
-        +list~Task~ plan
-        +dict explanations
-        +generate_plan() list~Task~
+        +list~ScheduledTask~ plan
+        +list skipped
+        +generate_plan() list~ScheduledTask~
         +explain_plan() str
     }
 
     Owner "1" --> "1..*" Pet : has
     Pet "1" --> "0..*" Task : has
     Scheduler "1" --> "1" Owner : plans for
-    Scheduler ..> Task : schedules
+    Scheduler "1" --> "0..*" ScheduledTask : produces
+    ScheduledTask "1" --> "1" Task : places
 ```
